@@ -1,0 +1,373 @@
+---
+title: "Trabalho 03"
+output:
+  html_document:
+    toc: true
+    toc_depth: 5
+    toc_float: TRUE
+---
+
+<html>
+<body>
+<style>
+
+h1.title {
+  display: none;
+}
+
+div.a {
+	text-align: center;
+}
+
+</style>
+
+<div class="a">
+
+<font color="white"><p> . </p></font>
+
+# Séries Temporais
+#### Igor Kuivjogi / Kaíque Ferreira / Nilo Célio
+#### <b> 3° Trabalho de Séries Temporais <b>
+##### 18 de Agosto de 2020
+
+<font color="white"><p> . </p></font>
+
+</div>
+
+
+```{r setup, echo = FALSE, warning = FALSE, message=FALSE}
+# Carregando Bibliotecas
+
+library(tidyverse)
+library(ggpmisc)
+library(knitr)
+library(kableExtra)
+library(lubridate)
+library(zoo)
+library(httr)
+#library(xlsx)
+library(readxl)
+library(fpp2)
+library(tidyr)
+library(ggthemes)
+library(stlplus)
+library(forecast)
+
+# Pacote para %<>%
+library(magrittr)
+
+# Pacote para gráfico ggplot2
+#library(devtools)
+#install_github("thomasp85/patchwork")
+library(patchwork)
+
+
+# seta o tema default
+theme_set(theme_classic())
+
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+
+# Carregando dados IPI
+url = 'https://www.ime.usp.br/~pam/IPI.XLS'
+a = GET(url, write_disk( tf <- tempfile(fileext = ".xls")))
+Dados_IPI =  as_tibble(read_excel(tf))
+names(Dados_IPI) = c("tempo", "IPI")
+
+# Tira o último ano incompleto
+Dados_IPI %<>%
+  filter(year(tempo) < 2000)
+
+Dados_IPI_Treino = Dados_IPI %>%
+  filter(year(tempo) < 1999)
+```
+
+
+
+# Análise Descritiva
+
+## Gráfico da Série
+
+<hr/>
+
+Nesse gráfico abaixo conseguimos ver de forma gráfica o conjunto de dados referente a produção física industrial nas seguintes variáveis:
+
+- Produtos Alimentares total mensal
+- Data: Mês de janeiro de 1985 a dezembro de 1999
+- Foi desconsiderado os valores de janeiro de 2000 a julho de 2000
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+ggplot(Dados_IPI, aes(x = tempo, y = IPI)) +
+  geom_path()
+```
+
+## Subsérie IPI
+
+<hr/>
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+Dados_IPI %>% 
+  mutate(mes = month(tempo, label = T)) %>% 
+  mutate(ano = year(tempo)) %>% 
+  mutate(texto1 = ifelse(mes == 'jan', ano, '')) %>% 
+  mutate(texto2 = ifelse(mes == 'dez', ano, '')) %>% 
+  ggplot(aes(x = mes, y = IPI, color = as.factor(ano), group = ano)) +
+  geom_line() +
+  geom_point() +
+  geom_text(aes(label = texto1), nudge_x = -0.5) +
+  geom_text(aes(label = texto2), nudge_x = 0.5) +
+  scale_x_discrete(expand = c(0, 1)) +
+  labs(x = 'Mês',  color = 'Ano')
+```
+
+## Autocorrelação
+
+<hr/>
+
+Abaixo podemos avaliar o gráfico de autocorrelação da série original
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+Dados_IPI = ts(Dados_IPI$IPI, frequency = 12, start=c(1985,1), end = c(1999,12))
+Dados_IPI_Treino = ts(Dados_IPI_Treino$IPI, frequency = 12, start=c(1985,1), end = c(1998,12))
+
+acf(Dados_IPI_Treino, lag.max=36)
+```
+
+
+
+## Autocorrelação Parcial
+
+<hr/>
+
+Abaixo podemos avaliar o gráfico de autocorrelação parcial da série original
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+pacf(Dados_IPI_Treino, lag.max=36)
+
+```
+
+## Diferenciação
+
+<hr/>
+
+Para tentar melhorar os resultados ao aplicar um modelo de séries temporais vamos diferenciar a série IPI e avaliar novamente as autocorrelações
+
+### Autocorrelação
+
+<hr/>
+
+Podemos análisar a autocorrelação da série após uma diferenciação $(1 - B^{12})Z_t$
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Dados_df = diff(Dados_IPI_Treino, differences= 1, lag = 12)
+
+acf(Dados_df, lag.max=36)
+```
+
+
+### Autocorrelação Parcial
+
+<hr/>
+
+Podemos analisar a autocorrelação parcial da série após uma diferenciação $(1 - B^{12})Z_t$
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+pacf(Dados_df, lag.max=36)
+
+```
+
+# Modelo Previsão
+
+<hr/>
+
+## Auto-arima
+
+<hr/>
+
+Vamos utilizar a função _auto.arima_ para encontrar um primeiro modelo sugerido e assim fazer o testes de diagnósticos para avaliar seus ajuste em relação à série dos dados
+
+```{r, echo= FALSE, warning=FALSE, message=FALSE}
+
+mod.auto =  auto.arima(Dados_IPI_Treino, d = 1,  trace = F)
+
+summary(mod.auto)
+```
+
+Percebemos que esse é o modelo indicado pelo _auto.arima_
+
+$$
+(1-\phi_1B)(\psi_1B-\psi_2B^2-\psi_3B^3-\psi_4B^4-\psi_5B^5)(1-B^{12})z_t=(1-\Theta_1B-\Theta_2B^2)a_t
+$$
+
+### Diagnostico
+
+<hr/>
+
+Vamos realizar testes de diagnósticos para avaliar o modelo sugerido pelo _auto.arima_ atravéz dos gráficos de autocorrelação e de autocorrelação parcial e também com o teste Ljung-Box
+
+#### Autocorrelação
+
+<hr/>
+
+Podemos analisar a autocorrelação da série para o modelo sugerido pelo _auto.arima_
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod.auto$residuals %>% acf(.,36)
+```
+
+#### Autocorrelação Parcial
+
+<hr/>
+
+Podemos analisar a autocorrelação parcial da série para o modelo sugerido pelo _auto.arima_
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod.auto$residuals %>% pacf(.,36)
+```
+
+#### Teste Ljung-Box
+
+<hr/>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+checkresiduals(mod.auto, lag = 24, plot = F)
+checkresiduals(mod.auto, lag = 30, plot = F)
+checkresiduals(mod.auto, lag = 36, plot = F)
+```
+
+## Polinômios AR
+
+<hr/>
+
+Como mais uma tentativa de encontrar um melhor modelo, vamos adicionar um polinômio auto regressivo e realizar testes de diagnósticos
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+mod2 = arima(Dados_IPI_Treino , order = c(1,1,5), seasonal = c(0,1,2))
+
+```
+
+
+### Autocorrelação Parcial
+
+<hr/>
+
+Vamos relembrar a autocorrelação parcial da série para o modelo sugerido pelo _auto.arima_
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod2$residuals %>% pacf(.,24)
+```
+
+Abaixo identificamos o modelo pensado com a adição do polinômio auto regressivo
+
+$$
+(1-\phi_7B^7-\phi_9B^9-\phi_{13}B^{13}-\phi_{14}B^{14})(\psi_1B-\psi_2B^2-\psi_3B^3-\psi_4B^4-\psi_5B^5)(1-B^{12})z_t=(1-\Theta_1B-\Theta_2B^2)a_t
+$$
+
+```{r, message=FALSE, warning=FALSE}
+mod2 = arima(Dados_IPI_Treino , order = c(14,1,5), seasonal = c(0,1,2),
+            fixed=c(0,0,0,0,0,0,NA,0,NA,0,0,0,NA,NA,NA,NA,NA,NA,NA,NA,NA))
+
+summary(mod2)
+```
+
+### Diagnostico AR
+
+<hr/>
+
+Vamos realizar testes de diagnósticos para avaliar o modelo sugerido pelo _auto.arima_ com a adição do polinômio auto regressivo atravéz dos gráficos de autocorrelação e de autocorrelação parcial e também com o teste Ljung-Box
+
+#### Autocorrelação
+
+<hr/>
+
+Podemos analisar a autocorrelação da série para o modelo com polinômio auto regressivo
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod2$residuals %>% acf(.,24)
+```
+
+#### Autocorrelação Parcial
+
+<hr/>
+
+Podemos analisar a autocorrelação parcial da série para o modelo com polinômio auto regressivo
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mod2$residuals %>% pacf(.,24)
+```
+
+#### Teste Ljung-Box
+
+<hr/>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+checkresiduals(mod2, lag = 24, plot = F)
+checkresiduals(mod2, lag = 30, plot = F)
+checkresiduals(mod2, lag = 36, plot = F)
+```
+
+# Previsão
+
+<hr/>
+
+Vamos fazer a previsão dos dados da série IPI para o ano de 1999 de janeiro até dezembro
+
+```{r, warning = F, message = F, fig.width = 8}
+
+dados_predicao <- tibble(predito = rep(NA, 168),
+       lo_80 = rep(NA, 168),
+       hi_80 = rep(NA, 168),
+       lo_95 = rep(NA, 168),
+       hi_95 = rep(NA, 168),
+       observado = Dados_IPI[1:168],
+       t = 1:168) %>% 
+  bind_rows(
+    forecast(mod2, h = 12) %>%
+    as_tibble() %>%
+    mutate(observado = as.numeric(tail(Dados_IPI, 12))) %>%
+    rename_all(., ~str_to_lower(.)) %>%
+    rename_all(., ~str_replace(., pattern = ' ', replacement = '_')) %>% 
+    rename(predito = point_forecast) %>% 
+    mutate(t = 169:180)
+  ) %>% 
+  pivot_longer(c(observado, predito))
+
+dados_predicao %>% 
+  ggplot(aes(x = t, y = value, color = name)) +
+  geom_ribbon(aes(ymin = lo_80, ymax = hi_80), color = '#e8d5f9', alpha = 0.2) +
+  geom_ribbon(aes(ymin = lo_95, ymax = hi_95), color = '#c495f0', alpha = 0.2) +
+  geom_line() +
+  labs(x = 't', y = 'IPI', title = 'Predição para 1999') +
+  scale_color_manual('Série IPI',labels = c("Observado", "Predito") ,values = c('blue', 'red'))
+
+```
+
+# Medidas de Acurácia
+
+<hr/>
+
+Podemos observar que o RMSE (raiz quadrada do erro quadrado médio) é similar entre os dados de treino e os dados de teste. Isto também acontece com o MAE (erro absoluto médio). Podemos dizer que o modelo tem uma boa capacidade para prever dados futuros que não foram utilizados no ajuste.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+accuracy(forecast(mod2, h=12), Dados_IPI)
+
+```
+
+## EQM
+
+<hr/>
+
+Com o último modelo apresentado obtemos um EQM de 19.03593
+
+```{r, echo=FALSE, eval=FALSE, message=FALSE, warning=FALSE}
+
+EQM = sum((tail(Dados_IPI, 12) - forecast(mod2, h = 12)$mean %>% as.numeric())^2)/12
+
+```
