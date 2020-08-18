@@ -316,7 +316,29 @@ checkresiduals(mod2, lag = 36, plot = F)
 
 <hr/>
 
-Vamos fazer a previsão dos dados da série IPI para o ano de 1999 de janeiro até dezembro
+Vamos fazer a previsão dos dados da série IPI para o ano de 1999 de janeiro até dezembro, a seguir temos a expressão utilizada para obter os dados preditos
+
+$$
+(1\phi^7-\phi_9B^9-\phi_{13}B^{13}-\phi_{14}B^{14})(1-B^{12})(1-B^{12})z_t = (1-\theta^1B-\theta^2B^2-\theta^3B^3-\theta^4B^4-\theta^5B^5)(1-\Theta_1B^{12}-\Theta_2B^{24})a_t
+$$
+Substituindo os pesos pelos seus respectivos coeficientes, isolando $z_t$ e acrescentando o horizonte $h$, obtemos o seguinte polinômio de previsão: 
+
+$$
+z_{t+h} = 2Z_{t-12+h}-z_{t-24+h}+0,1264z_{t-7+h}-0,2528z_{t-19+h}+0,1264z_{t-31+h}+0,237z_{t-9+h}-0,4742z_{t-21+h}
+$$
+
+$$
++0,2371z_{t-33+h}-0,1511z_{t-13+h}+0.3022z_{t-25+h}-0,1511z_{t-37+h}-0,2006z_{t-14+h}+0,4012z_{t-26+h}+0,2006z_{t-38+h}
+$$
+
+$$
++(1+0,3725Z_{t+h}+0,2376Z_{t+2+h}+0,1145Z_{t+3+h}+0,1395Z_{t+4+h}+0,0837Z_{t+5+h})(1-0,5401z_{t+12+h}+0,0675z_{t+24+h})^2a_{t+h}
+$$
+
+
+## Observado e Preditos
+
+<hr/>
 
 ```{r, warning = F, message = F, fig.width = 8}
 
@@ -348,7 +370,7 @@ dados_predicao %>%
 
 ```
 
-# Medidas de Acurácia
+## Medidas de Acurácia
 
 <hr/>
 
